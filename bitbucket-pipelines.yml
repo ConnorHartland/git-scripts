@@ -27,7 +27,7 @@ definitions:
           - npm install -g crx3
           
           # Package the extension
-          - bash scripts/package-extension.sh
+          - node scripts/package-extension.js
           
           # Generate update manifest
           - node scripts/generate-update-xml.js
@@ -59,7 +59,7 @@ pipelines:
           name: Create Release Tag
           script:
             # Create git tag if this is a release merge
-            - bash scripts/handle-pr-merge.sh
+            - node scripts/handle-pr-merge.js
 
     release/*:
       - step: *build-and-package
@@ -102,7 +102,7 @@ pipelines:
                   - node
                 script:
                   # Create release branch and bump version
-                  - bash scripts/create-release-branch.sh
+                  - node scripts/create-release-branch.js
                   # Source the version environment variable
                   - source version.env
                   - node scripts/bump-version.js $VERSION
@@ -150,4 +150,4 @@ pipelines:
                   # Source the version environment variable
                   - source version.env
                   # Create pull request back to main
-                  - bash scripts/create-pr.sh $VERSION
+                  - node scripts/create-pr.js
