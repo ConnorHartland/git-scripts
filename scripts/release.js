@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
 
 function exec(command, options = {}) {
   try {
@@ -159,6 +159,7 @@ async function main() {
   }
 }
 
-if (require.main === module) {
-  main();
-}
+// Run the main function
+main();
+
+export { main, createPullRequest, packageExtension, generateUpdateXML };

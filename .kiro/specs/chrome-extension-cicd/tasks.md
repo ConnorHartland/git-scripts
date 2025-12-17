@@ -88,7 +88,7 @@
   - **Property 9: Required tool validation**
   - **Validates: Requirements 11.5**
 
-- [ ] 7. Update setup documentation
+- [x] 7. Update setup documentation
   - Update or create PIPELINE.md with new workflow instructions
   - Document how to trigger create-release pipeline
   - Document TYPE parameter options

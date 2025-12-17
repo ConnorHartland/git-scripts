@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 // Import the functions from the script
-const { generateUpdateXML, validateEnvironment, readVersion } = require('./scripts/generate-update-xml.js');
+import { generateUpdateXML, validateEnvironment, readVersion } from './scripts/generate-update-xml.js';
 
 console.log('Testing generate-update-xml.js...\n');
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
-const fs = require('fs');
+import { execSync } from 'child_process';
+import fs from 'fs';
 
 function exec(command, options = {}) {
   try {
@@ -107,8 +107,7 @@ Created automatically after version change detected on main branch.`;
   }
 }
 
-if (require.main === module) {
-  main();
-}
+// Run the main function
+main();
 
-module.exports = { main };
+export { main };
