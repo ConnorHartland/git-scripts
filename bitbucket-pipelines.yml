@@ -14,23 +14,9 @@ definitions:
     
     - step: &build-and-package
         name: Build and Package Extension
-        caches:
-          - node
         script:
-          # Install dependencies
-          - npm install
-          
-          # Build the extension
-          - npm run build
-          
-          # Install crx3 globally for packaging
-          - npm install -g crx3
-          
-          # Package the extension
-          - node scripts/package-extension.js
-          
-          # Generate update manifest
-          - node scripts/generate-update-xml.js
+          # Files should already be built and packaged from release.js
+          - echo "Using pre-built artifacts from release step"
         artifacts:
           - complaint.crx
           - update.xml
@@ -58,8 +44,8 @@ pipelines:
       - step:
           name: Create Release Tag
           script:
-            # Create git tag if this is a release merge
-            - node scripts/handle-pr-merge.js
+            # Create git tag if version changed
+            - node scripts/tag-on-version-change.js
 
     release/*:
       - step: *build-and-package
@@ -82,8 +68,6 @@ pipelines:
           script:
             - npm install
             - npm run build
-            # Add any tests here if you have them
-            # - npm test
 
   custom:
     create-release:
@@ -97,36 +81,22 @@ pipelines:
           name: Prepare Release
           steps:
             - step:
-                name: Create Release Branch and Bump Version
+                name: Create Release and Build
                 caches:
                   - node
                 script:
-                  # Create release branch and bump version
-                  - node scripts/create-release-branch.js
-                  # Source the version environment variable
-                  - source version.env
-                  - node scripts/bump-version.js $VERSION
+                  # Install crx3 globally for packaging
+                  - npm install -g crx3
+                  # Run the complete release process
+                  - node scripts/release.js
                 artifacts:
-                  - package.json
+                  - complaint.crx
+                  - update.xml
                   - version.env
-            - step:
-                name: Build Extension
-                caches:
-                  - node
-                script:
-                  # Install dependencies
-                  - npm install
-                  # Build the extension
-                  - npm run build
-                artifacts:
-                  - dist/**
       - stage:
           name: Deploy to Dev
           deployment: dev
           steps:
-            - step:
-                <<: *build-and-package
-                name: Build and Package for Dev
             - step:
                 <<: *deploy-to-s3
                 name: Deploy to Dev Environment
@@ -136,18 +106,24 @@ pipelines:
           trigger: manual
           steps:
             - step:
-                <<: *build-and-package
-                name: Build and Package for Prod
-            - step:
                 <<: *deploy-to-s3
                 name: Deploy to Prod Environment
       - stage:
-          name: Finalize Release
+          name: Create Pull Request
           steps:
             - step:
-                name: Create Pull Request
+                name: Create PR back to main
                 script:
-                  # Source the version environment variable
+                  # Source the version and create PR
                   - source version.env
-                  # Create pull request back to main
-                  - node scripts/create-pr.js
+                  - |
+                    curl -X POST "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/pullrequests" \
+                      -H "Authorization: Bearer ${BITBUCKET_ACCESS_TOKEN}" \
+                      -H "Content-Type: application/json" \
+                      -d "{
+                        \"title\": \"Release v${VERSION}\",
+                        \"description\": \"Automated release for version ${VERSION}\",
+                        \"source\": {\"branch\": {\"name\": \"release/v${VERSION}\"}},
+                        \"destination\": {\"branch\": {\"name\": \"main\"}},
+                        \"close_source_branch\": false
+                      }"

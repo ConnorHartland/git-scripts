@@ -1,0 +1,164 @@
+#!/usr/bin/env node
+
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+
+function exec(command, options = {}) {
+  try {
+    return execSync(command, { encoding: 'utf8', ...options }).trim();
+  } catch (error) {
+    throw new Error(`Command failed: ${command}\n${error.message}`);
+  }
+}
+
+function updateManifestVersion(newVersion) {
+  // npm version handles package.json, we just need to sync manifest.json
+  const manifestPath = 'src/manifest.json';
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.version = newVersion;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+  }
+}
+
+function packageExtension() {
+  const privateKey = process.env.EXTENSION_PRIVATE_KEY;
+  if (!privateKey) throw new Error('EXTENSION_PRIVATE_KEY not set');
+  
+  const keyData = Buffer.from(privateKey, 'base64');
+  fs.writeFileSync('key.pem', keyData);
+  
+  try {
+    exec('crx3 pack dist/ -p key.pem -o complaint.crx');
+  } finally {
+    if (fs.existsSync('key.pem')) fs.unlinkSync('key.pem');
+  }
+}
+
+function generateUpdateXML(version) {
+  const crxBaseUrl = process.env.CRX_BASE_URL;
+  const extensionId = process.env.EXTENSION_ID;
+  
+  if (!crxBaseUrl || !extensionId) {
+    throw new Error('CRX_BASE_URL and EXTENSION_ID must be set');
+  }
+  
+  const xml = `<?xml version='1.0' encoding='UTF-8'?>
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='${extensionId}'>
+    <updatecheck codebase='${crxBaseUrl}/complaint.crx' version='${version}' />
+  </app>
+</gupdate>`;
+  
+  fs.writeFileSync('update.xml', xml);
+}
+async function createPullRequest(version) {
+  const workspace = process.env.BITBUCKET_WORKSPACE;
+  const repoSlug = process.env.BITBUCKET_REPO_SLUG;
+  const accessToken = process.env.BITBUCKET_ACCESS_TOKEN;
+  
+  if (!workspace || !repoSlug || !accessToken) {
+    throw new Error('Bitbucket environment variables not set');
+  }
+  
+  const prPayload = {
+    title: `Release v${version}`,
+    description: `Automated release for version ${version}`,
+    source: { branch: { name: `release/v${version}` } },
+    destination: { branch: { name: 'main' } },
+    close_source_branch: false
+  };
+  
+  const options = {
+    hostname: 'api.bitbucket.org',
+    path: `/2.0/repositories/${workspace}/${repoSlug}/pullrequests`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`
+    }
+  };
+  
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 201) {
+          console.log('✓ Pull request created successfully');
+          resolve();
+        } else {
+          reject(new Error(`PR creation failed: ${res.statusCode} ${body}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(JSON.stringify(prPayload));
+    req.end();
+  });
+}
+
+async function main() {
+  try {
+    const type = process.env.TYPE;
+    if (!type || !['Major', 'Minor', 'Patch'].includes(type)) {
+      throw new Error('TYPE must be Major, Minor, or Patch');
+    }
+    
+    // 1. Create release branch
+    console.log('Creating release branch...');
+    const currentBranch = exec('git rev-parse --abbrev-ref HEAD');
+    if (currentBranch !== 'main') throw new Error('Must be on main branch');
+    
+    // 2. Use npm version to bump and get new version
+    console.log(`Bumping version (${type.toLowerCase()})...`);
+    const versionType = type.toLowerCase(); // npm expects lowercase
+    const newVersion = exec(`npm version ${versionType} --no-git-tag-version`);
+    const cleanVersion = newVersion.replace('v', ''); // npm returns v1.2.3, we want 1.2.3
+    
+    const releaseBranch = `release/v${cleanVersion}`;
+    
+    // Create and switch to release branch
+    exec(`git checkout -b "${releaseBranch}"`);
+    
+    // Update manifest.json to match package.json
+    updateManifestVersion(cleanVersion);
+    
+    // Commit version changes
+    exec('git add package.json');
+    if (fs.existsSync('src/manifest.json')) {
+      exec('git add src/manifest.json');
+    }
+    exec(`git commit -m "Bump version to ${cleanVersion}"`);
+    exec(`git push -u origin "${releaseBranch}"`);
+    
+    // 3. Build
+    console.log('Building extension...');
+    exec('npm install');
+    exec('npm run build');
+    
+    // 4. Package
+    console.log('Packaging extension...');
+    packageExtension();
+    
+    // 5. Generate update manifest
+    console.log('Generating update manifest...');
+    generateUpdateXML(cleanVersion);
+    
+    console.log(`✓ Release ${cleanVersion} ready for deployment`);
+    
+    // Export version for pipeline
+    const cloneDir = process.env.BITBUCKET_CLONE_DIR || process.cwd();
+    fs.writeFileSync(path.join(cloneDir, 'version.env'), `export VERSION=${cleanVersion}\n`);
+    
+  } catch (error) {
+    console.error('Error:', error.message);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  main();
+}

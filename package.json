@@ -1,6 +1,6 @@
 {
   "name": "test-chrome-extension",
-  "version": "1.2.3",
+  "version": "1.1.0",
   "description": "Test Chrome Extension",
   "scripts": {
     "build": "echo 'build'"
