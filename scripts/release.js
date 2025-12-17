@@ -105,18 +105,8 @@ async function main() {
     exec(`git commit -m "Bump version to ${cleanVersion}"`);
     exec(`git push -u origin "${releaseBranch}"`);
     
-    // 3. Build
-    console.log('Building extension...');
-    exec('npm install');
-    exec('npm run build');
-    
-    // Packaging and update manifest generation will happen in deployment steps
-    
-    console.log(`✓ Release ${cleanVersion} ready for deployment`);
-    
-    // Export version for pipeline
-    const cloneDir = process.env.BITBUCKET_CLONE_DIR || process.cwd();
-    fs.writeFileSync(path.join(cloneDir, 'version.env'), `export VERSION=${cleanVersion}\n`);
+    console.log(`✓ Release branch ${releaseBranch} created and pushed`);
+    console.log(`The release pipeline will now run on the ${releaseBranch} branch`);
     
   } catch (error) {
     console.error('Error:', error.message);

@@ -47,6 +47,70 @@ pipelines:
             # Create git tag if version changed
             - node scripts/tag-on-version-change.js
 
+    release/*:
+      - step: *build-extension
+      - step:
+          name: Package Extension
+          script:
+            # Install crx3 for packaging
+            - npm install -g crx3
+            # Package extension (needs EXTENSION_PRIVATE_KEY)
+            - node scripts/package-extension.js
+            # Generate update manifest (needs CRX_BASE_URL, EXTENSION_ID)
+            - node scripts/generate-update-xml.js
+          artifacts:
+            - complaint.crx
+            - update.xml
+      - step:
+          <<: *deploy-to-s3
+          name: Deploy to Dev
+          deployment: dev
+          script:
+            # Install AWS CLI
+            - apt-get update && apt-get install -y awscli
+            # Set S3 path for dev
+            - export S3_PATH="dev"
+            # Upload CRX file
+            - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
+            # Upload update manifest
+            - aws s3 cp update.xml s3://${S3_BUCKET}/${S3_PATH}/update.xml --acl public-read
+            # Output the URLs
+            - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
+            - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
+      - step:
+          <<: *deploy-to-s3
+          name: Deploy to Prod
+          deployment: prod
+          trigger: manual
+          script:
+            # Install AWS CLI
+            - apt-get update && apt-get install -y awscli
+            # Set S3 path for prod
+            - export S3_PATH="prod"
+            # Upload CRX file
+            - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
+            # Upload update manifest
+            - aws s3 cp update.xml s3://${S3_BUCKET}/${S3_PATH}/update.xml --acl public-read
+            # Output the URLs
+            - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
+            - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
+      - step:
+          name: Create PR back to main
+          script:
+            # Extract version from branch name (release/v1.2.3 -> 1.2.3)
+            - export VERSION=$(echo $BITBUCKET_BRANCH | sed 's/release\/v//')
+            - |
+              curl -X POST "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/pullrequests" \
+                -H "Authorization: Bearer ${BITBUCKET_ACCESS_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"title\": \"Release v${VERSION}\",
+                  \"description\": \"Automated release for version ${VERSION}\",
+                  \"source\": {\"branch\": {\"name\": \"${BITBUCKET_BRANCH}\"}},
+                  \"destination\": {\"branch\": {\"name\": \"main\"}},
+                  \"close_source_branch\": false
+                }"
+
   pull-requests:
     '**':
       - step:
@@ -65,93 +129,10 @@ pipelines:
               - Major
               - Minor
               - Patch
-      - stage:
-          name: Prepare Release
-          steps:
-            - step:
-                name: Create Release and Build
-                caches:
-                  - node
-                script:
-                  # Run the release process (version bump, branch creation, build)
-                  - node scripts/release.js
-                artifacts:
-                  - dist/**
-                  - version.env
-      - stage:
-          name: Deploy to Dev
-          deployment: dev
-          steps:
-            - step:
-                name: Package and Deploy to Dev
-                script:
-                  # Install crx3 for packaging
-                  - npm install -g crx3
-                  
-                  # Package extension (needs EXTENSION_PRIVATE_KEY from deployment)
-                  - node scripts/package-extension.js
-                  
-                  # Generate update manifest (needs CRX_BASE_URL, EXTENSION_ID from deployment)
-                  - source version.env
-                  - node scripts/generate-update-xml.js
-                  
-                  # Install AWS CLI and deploy
-                  - apt-get update && apt-get install -y awscli
-                  
-                  # Set S3 path for dev
-                  - export S3_PATH="dev"
-                  
-                  # Upload CRX file
-                  - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
-                  
-                  # Upload update manifest
-                  - aws s3 cp update.xml s3://${S3_BUCKET}/${S3_PATH}/update.xml --acl public-read
-                  
-                  # Output the URLs
-                  - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
-                  - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
-                artifacts:
-                  - complaint.crx
-                  - update.xml
-      - stage:
-          name: Deploy to Prod
-          deployment: prod
-          trigger: manual
-          steps:
-            - step:
-                name: Deploy to Prod Environment
-                script:
-                  # Install AWS CLI
-                  - apt-get update && apt-get install -y awscli
-                  
-                  # Set S3 path for prod
-                  - export S3_PATH="prod"
-                  
-                  # Upload CRX file (already packaged in dev stage)
-                  - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
-                  
-                  # Upload update manifest (already generated in dev stage)
-                  - aws s3 cp update.xml s3://${S3_BUCKET}/${S3_PATH}/update.xml --acl public-read
-                  
-                  # Output the URLs
-                  - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
-                  - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
-      - stage:
-          name: Create Pull Request
-          steps:
-            - step:
-                name: Create PR back to main
-                script:
-                  # Source the version and create PR
-                  - source version.env
-                  - |
-                    curl -X POST "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/pullrequests" \
-                      -H "Authorization: Bearer ${BITBUCKET_ACCESS_TOKEN}" \
-                      -H "Content-Type: application/json" \
-                      -d "{
-                        \"title\": \"Release v${VERSION}\",
-                        \"description\": \"Automated release for version ${VERSION}\",
-                        \"source\": {\"branch\": {\"name\": \"release/v${VERSION}\"}},
-                        \"destination\": {\"branch\": {\"name\": \"main\"}},
-                        \"close_source_branch\": false
-                      }"
+      - step:
+          name: Create Release Branch
+          caches:
+            - node
+          script:
+            # Run the release process (version bump, branch creation, push)
+            - node scripts/release.js
