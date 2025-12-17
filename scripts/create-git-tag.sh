@@ -25,18 +25,30 @@ if [ -z "$CURRENT_VERSION" ]; then
   exit 1
 fi
 
-# Check if this looks like a release merge by examining recent commit messages
-RECENT_COMMITS=$(git log --oneline -5 --grep="Merge.*release/v" --grep="Release v" --grep="Bump version to")
+echo "Current version in package.json: ${CURRENT_VERSION}"
 
-if [ -z "$RECENT_COMMITS" ]; then
-  echo "No recent release-related commits found. Skipping tag creation."
-  echo "Recent commits:"
-  git log --oneline -5
+# Get the previous version from the parent commit
+# This checks if the version changed in the most recent merge
+PREVIOUS_VERSION=""
+if git rev-parse HEAD~1 >/dev/null 2>&1; then
+  # Check if package.json existed in the previous commit
+  if git show HEAD~1:package.json >/dev/null 2>&1; then
+    PREVIOUS_VERSION=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
+    echo "Previous version in package.json: ${PREVIOUS_VERSION}"
+  else
+    echo "No package.json found in previous commit - treating as initial version"
+  fi
+else
+  echo "No previous commit found - treating as initial version"
+fi
+
+# If versions are the same, no need to tag
+if [ "$CURRENT_VERSION" = "$PREVIOUS_VERSION" ]; then
+  echo "Version unchanged (${CURRENT_VERSION}). No tag needed."
   exit 0
 fi
 
-echo "Recent release-related commits found:"
-echo "$RECENT_COMMITS"
+echo "Version changed from '${PREVIOUS_VERSION}' to '${CURRENT_VERSION}' - creating tag"
 
 TAG_NAME="v${CURRENT_VERSION}"
 
@@ -53,8 +65,9 @@ echo "Creating git tag: ${TAG_NAME}"
 git tag -a "$TAG_NAME" -m "Release version ${CURRENT_VERSION}
 
 This tag marks the release of version ${CURRENT_VERSION}.
+Previous version: ${PREVIOUS_VERSION}
 
-Created automatically after release branch merge to main."
+Created automatically after version change detected on main branch."
 
 # Push the tag to remote
 git push origin "$TAG_NAME"
