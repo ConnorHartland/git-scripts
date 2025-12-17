@@ -1,0 +1,153 @@
+image: node:22
+
+definitions:
+  steps:
+    - step: &build-extension
+        name: Build Extension
+        caches:
+          - node
+        script:
+          - npm install
+          - npm run build
+        artifacts:
+          - dist/**
+    
+    - step: &build-and-package
+        name: Build and Package Extension
+        caches:
+          - node
+        script:
+          # Install dependencies
+          - npm install
+          
+          # Build the extension
+          - npm run build
+          
+          # Install crx3 globally for packaging
+          - npm install -g crx3
+          
+          # Package the extension
+          - bash scripts/package-extension.sh
+          
+          # Generate update manifest
+          - node scripts/generate-update-xml.js
+        artifacts:
+          - complaint.crx
+          - update.xml
+    
+    - step: &deploy-to-s3
+        name: Deploy to S3
+        script:
+          # Install AWS CLI
+          - apt-get update && apt-get install -y awscli
+          
+          # Upload CRX file
+          - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
+          
+          # Upload update manifest
+          - aws s3 cp update.xml s3://${S3_BUCKET}/${S3_PATH}/update.xml --acl public-read
+          
+          # Output the URLs
+          - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
+          - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
+
+pipelines:
+  branches:
+    main:
+      - step: *build-extension
+      - step:
+          name: Create Release Tag
+          script:
+            # Create git tag if this is a release merge
+            - bash scripts/handle-pr-merge.sh
+
+    release/*:
+      - step: *build-and-package
+      - step:
+          <<: *deploy-to-s3
+          name: Deploy to Dev
+          deployment: dev
+      - step:
+          <<: *deploy-to-s3
+          name: Deploy to Prod
+          deployment: prod
+          trigger: manual
+
+  pull-requests:
+    '**':
+      - step:
+          name: Build and Test PR
+          caches:
+            - node
+          script:
+            - npm install
+            - npm run build
+            # Add any tests here if you have them
+            # - npm test
+
+  custom:
+    create-release:
+      - variables:
+          - name: TYPE
+            allowed-values:
+              - Major
+              - Minor
+              - Patch
+      - stage:
+          name: Prepare Release
+          steps:
+            - step:
+                name: Create Release Branch and Bump Version
+                caches:
+                  - node
+                script:
+                  # Create release branch and bump version
+                  - bash scripts/create-release-branch.sh
+                  # Source the version environment variable
+                  - source version.env
+                  - node scripts/bump-version.js $VERSION
+                artifacts:
+                  - package.json
+                  - version.env
+            - step:
+                name: Build Extension
+                caches:
+                  - node
+                script:
+                  # Install dependencies
+                  - npm install
+                  # Build the extension
+                  - npm run build
+                artifacts:
+                  - dist/**
+      - stage:
+          name: Deploy to Dev
+          deployment: dev
+          steps:
+            - step:
+                <<: *build-and-package
+                name: Build and Package for Dev
+            - step:
+                <<: *deploy-to-s3
+                name: Deploy to Dev Environment
+      - stage:
+          name: Deploy to Prod
+          deployment: prod
+          trigger: manual
+          steps:
+            - step:
+                <<: *build-and-package
+                name: Build and Package for Prod
+            - step:
+                <<: *deploy-to-s3
+                name: Deploy to Prod Environment
+      - stage:
+          name: Finalize Release
+          steps:
+            - step:
+                name: Create Pull Request
+                script:
+                  # Source the version environment variable
+                  - source version.env
+                  # Create pull request back to main
+                  - bash scripts/create-pr.sh $VERSION
