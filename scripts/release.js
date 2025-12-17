@@ -23,37 +23,8 @@ function updateManifestVersion(newVersion) {
   }
 }
 
-function packageExtension() {
-  const privateKey = process.env.EXTENSION_PRIVATE_KEY;
-  if (!privateKey) throw new Error('EXTENSION_PRIVATE_KEY not set');
-  
-  const keyData = Buffer.from(privateKey, 'base64');
-  fs.writeFileSync('key.pem', keyData);
-  
-  try {
-    exec('crx3 pack dist/ -p key.pem -o complaint.crx');
-  } finally {
-    if (fs.existsSync('key.pem')) fs.unlinkSync('key.pem');
-  }
-}
-
-function generateUpdateXML(version) {
-  const crxBaseUrl = process.env.CRX_BASE_URL;
-  const extensionId = process.env.EXTENSION_ID;
-  
-  if (!crxBaseUrl || !extensionId) {
-    throw new Error('CRX_BASE_URL and EXTENSION_ID must be set');
-  }
-  
-  const xml = `<?xml version='1.0' encoding='UTF-8'?>
-<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
-  <app appid='${extensionId}'>
-    <updatecheck codebase='${crxBaseUrl}/complaint.crx' version='${version}' />
-  </app>
-</gupdate>`;
-  
-  fs.writeFileSync('update.xml', xml);
-}
+// Packaging and update manifest generation moved to separate scripts
+// that run in deployment steps where env vars are available
 async function createPullRequest(version) {
   const workspace = process.env.BITBUCKET_WORKSPACE;
   const repoSlug = process.env.BITBUCKET_REPO_SLUG;
@@ -139,13 +110,7 @@ async function main() {
     exec('npm install');
     exec('npm run build');
     
-    // 4. Package
-    console.log('Packaging extension...');
-    packageExtension();
-    
-    // 5. Generate update manifest
-    console.log('Generating update manifest...');
-    generateUpdateXML(cleanVersion);
+    // Packaging and update manifest generation will happen in deployment steps
     
     console.log(`✓ Release ${cleanVersion} ready for deployment`);
     
@@ -162,4 +127,4 @@ async function main() {
 // Run the main function
 main();
 
-export { main, createPullRequest, packageExtension, generateUpdateXML };
+export { main, createPullRequest };

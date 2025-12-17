@@ -47,18 +47,6 @@ pipelines:
             # Create git tag if version changed
             - node scripts/tag-on-version-change.js
 
-    release/*:
-      - step: *build-and-package
-      - step:
-          <<: *deploy-to-s3
-          name: Deploy to Dev
-          deployment: dev
-      - step:
-          <<: *deploy-to-s3
-          name: Deploy to Prod
-          deployment: prod
-          trigger: manual
-
   pull-requests:
     '**':
       - step:
@@ -85,29 +73,69 @@ pipelines:
                 caches:
                   - node
                 script:
-                  # Install crx3 globally for packaging
-                  - npm install -g crx3
-                  # Run the complete release process
+                  # Run the release process (version bump, branch creation, build)
                   - node scripts/release.js
                 artifacts:
-                  - complaint.crx
-                  - update.xml
+                  - dist/**
                   - version.env
       - stage:
           name: Deploy to Dev
           deployment: dev
           steps:
             - step:
-                <<: *deploy-to-s3
-                name: Deploy to Dev Environment
+                name: Package and Deploy to Dev
+                script:
+                  # Install crx3 for packaging
+                  - npm install -g crx3
+                  
+                  # Package extension (needs EXTENSION_PRIVATE_KEY from deployment)
+                  - node scripts/package-extension.js
+                  
+                  # Generate update manifest (needs CRX_BASE_URL, EXTENSION_ID from deployment)
+                  - source version.env
+                  - node scripts/generate-update-xml.js
+                  
+                  # Install AWS CLI and deploy
+                  - apt-get update && apt-get install -y awscli
+                  
+                  # Set S3 path for dev
+                  - export S3_PATH="dev"
+                  
+                  # Upload CRX file
+                  - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
+                  
+                  # Upload update manifest
+                  - aws s3 cp update.xml s3://${S3_BUCKET}/${S3_PATH}/update.xml --acl public-read
+                  
+                  # Output the URLs
+                  - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
+                  - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
+                artifacts:
+                  - complaint.crx
+                  - update.xml
       - stage:
           name: Deploy to Prod
           deployment: prod
           trigger: manual
           steps:
             - step:
-                <<: *deploy-to-s3
                 name: Deploy to Prod Environment
+                script:
+                  # Install AWS CLI
+                  - apt-get update && apt-get install -y awscli
+                  
+                  # Set S3 path for prod
+                  - export S3_PATH="prod"
+                  
+                  # Upload CRX file (already packaged in dev stage)
+                  - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
+                  
+                  # Upload update manifest (already generated in dev stage)
+                  - aws s3 cp update.xml s3://${S3_BUCKET}/${S3_PATH}/update.xml --acl public-read
+                  
+                  # Output the URLs
+                  - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
+                  - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
       - stage:
           name: Create Pull Request
           steps:
