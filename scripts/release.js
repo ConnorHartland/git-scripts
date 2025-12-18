@@ -2,7 +2,6 @@
 
 import { execSync } from 'child_process';
 import fs from 'fs';
-import path from 'path';
 import https from 'https';
 
 function exec(command, options = {}) {
@@ -13,15 +12,7 @@ function exec(command, options = {}) {
   }
 }
 
-function updateManifestVersion(newVersion) {
-  // npm version handles package.json, we just need to sync manifest.json
-  const manifestPath = 'src/manifest.json';
-  if (fs.existsSync(manifestPath)) {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    manifest.version = newVersion;
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-  }
-}
+
 
 // Packaging and update manifest generation moved to separate scripts
 // that run in deployment steps where env vars are available
@@ -91,17 +82,14 @@ async function main() {
     
     const releaseBranch = `release/v${cleanVersion}`;
     
-    // Create and switch to release branch
-    exec(`git checkout -b "${releaseBranch}"`);
+    // Fetch latest from remote to ensure we're up-to-date
+    exec('git fetch origin main');
     
-    // Update manifest.json to match package.json
-    updateManifestVersion(cleanVersion);
+    // Create and switch to release branch from latest main
+    exec(`git checkout -b "${releaseBranch}" origin/main`);
     
     // Commit version changes
     exec('git add package.json');
-    if (fs.existsSync('src/manifest.json')) {
-      exec('git add src/manifest.json');
-    }
     exec(`git commit -m "Bump version to ${cleanVersion}"`);
     exec(`git push -u origin "${releaseBranch}"`);
     

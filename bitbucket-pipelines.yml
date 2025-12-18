@@ -23,10 +23,8 @@ definitions:
     
     - step: &deploy-to-s3
         name: Deploy to S3
+        image: amazon/aws-cli:latest
         script:
-          # Install AWS CLI
-          - apt-get update && apt-get install -y awscli
-          
           # Upload CRX file
           - aws s3 cp complaint.crx s3://${S3_BUCKET}/${S3_PATH}/complaint.crx --acl public-read
           
@@ -62,12 +60,10 @@ pipelines:
             - complaint.crx
             - update.xml
       - step:
-          <<: *deploy-to-s3
           name: Deploy to Dev
+          image: amazon/aws-cli:latest
           deployment: dev
           script:
-            # Install AWS CLI
-            - apt-get update && apt-get install -y awscli
             # Set S3 path for dev
             - export S3_PATH="dev"
             # Upload CRX file
@@ -78,13 +74,11 @@ pipelines:
             - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
             - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
       - step:
-          <<: *deploy-to-s3
           name: Deploy to Prod
+          image: amazon/aws-cli:latest
           deployment: prod
           trigger: manual
           script:
-            # Install AWS CLI
-            - apt-get update && apt-get install -y awscli
             # Set S3 path for prod
             - export S3_PATH="prod"
             # Upload CRX file

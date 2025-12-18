@@ -11,9 +11,31 @@ function exec(command, options = {}) {
   }
 }
 
+function syncManifestVersion() {
+  const manifestPath = 'dist/manifest.json';
+  const packagePath = 'package.json';
+  
+  if (!fs.existsSync(manifestPath)) {
+    console.warn('⚠ dist/manifest.json not found, skipping version sync');
+    return;
+  }
+  
+  const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  
+  if (manifest.version !== packageJson.version) {
+    manifest.version = packageJson.version;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    console.log(`✓ Updated manifest.json version to ${packageJson.version}`);
+  }
+}
+
 function packageExtension() {
   const privateKey = process.env.EXTENSION_PRIVATE_KEY;
   if (!privateKey) throw new Error('EXTENSION_PRIVATE_KEY not set');
+  
+  // Sync manifest version before packaging
+  syncManifestVersion();
   
   console.log('Packaging extension with private key...');
   
