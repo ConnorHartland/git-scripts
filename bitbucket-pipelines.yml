@@ -39,11 +39,6 @@ pipelines:
   branches:
     main:
       - step: *build-extension
-      - step:
-          name: Create Release Tag
-          script:
-            # Create git tag if version changed
-            - node scripts/tag-on-version-change.js
 
     release/*:
       - step: *build-extension
@@ -88,6 +83,17 @@ pipelines:
             # Output the URLs
             - echo "Extension deployed to https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/complaint.crx"
             - echo "Update manifest at https://${S3_BUCKET}.s3.amazonaws.com/${S3_PATH}/update.xml"
+      - step:
+          name: Tag Release
+          script:
+            # Extract version from package.json
+            - export VERSION=$(node -e "console.log(require('./package.json').version)")
+            - export TAG_NAME="v${VERSION}"
+            # Create annotated tag
+            - git tag -a "${TAG_NAME}" -m "Release version ${VERSION}"
+            # Push tag to remote
+            - git push origin "${TAG_NAME}"
+            - echo "✓ Tagged release as ${TAG_NAME}"
       - step:
           name: Create PR back to main
           script:

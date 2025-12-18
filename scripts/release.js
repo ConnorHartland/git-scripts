@@ -95,6 +95,7 @@ async function main() {
     
     console.log(`✓ Release branch ${releaseBranch} created and pushed`);
     console.log(`The release pipeline will now run on the ${releaseBranch} branch`);
+    console.log(`Tag will be created after prod deployment`);
     
   } catch (error) {
     console.error('Error:', error.message);
