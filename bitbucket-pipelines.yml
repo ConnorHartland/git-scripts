@@ -95,21 +95,19 @@ pipelines:
             - git push origin "${TAG_NAME}"
             - echo "✓ Tagged release as ${TAG_NAME}"
       - step:
-          name: Create PR back to main
+          name: Merge Release to Main
           script:
-            # Extract version from branch name (release/v1.2.3 -> 1.2.3)
-            - export VERSION=$(echo $BITBUCKET_BRANCH | sed 's/release\/v//')
-            - |
-              curl -X POST "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/pullrequests" \
-                -H "Authorization: Bearer ${BITBUCKET_ACCESS_TOKEN}" \
-                -H "Content-Type: application/json" \
-                -d "{
-                  \"title\": \"Release v${VERSION}\",
-                  \"description\": \"Automated release for version ${VERSION}\",
-                  \"source\": {\"branch\": {\"name\": \"${BITBUCKET_BRANCH}\"}},
-                  \"destination\": {\"branch\": {\"name\": \"main\"}},
-                  \"close_source_branch\": false
-                }"
+            # Fetch latest from remote
+            - git fetch origin main
+            # Checkout main
+            - git checkout main
+            # Merge release branch
+            - git merge --no-ff $BITBUCKET_BRANCH -m "Merge release $BITBUCKET_BRANCH into main"
+            # Push back to main
+            - git push origin main
+            # Delete release branch
+            - git push origin --delete $BITBUCKET_BRANCH
+            - echo "✓ Merged $BITBUCKET_BRANCH into main and deleted branch"
 
   pull-requests:
     '**':
